@@ -1,0 +1,135 @@
+# PROPOSAL 1 REVISED — engineering improvements identified from proposal audit
+#
+# All changes reference specific proposal text that leaves the parameter open,
+# or propose a stretch target within the stated performance range.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# What changed vs proposal_1, and why
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#  CHANGED:
+#
+#  h_orbit 500→400 km     [PROPOSAL: "~500 km LEO (orbit type TBD)"]
+#                          The orbit is explicitly TBD. 400 km is the single
+#                          largest lever on the link budget (reduces slant range,
+#                          cuts diffraction loss by (500/400)²=1.56×, reduces
+#                          atmospheric path length). No hardware changes required.
+#
+#  alpha (site select)     [PROPOSAL: OGS site not selected]
+#                          Choosing a high-altitude observatory site (Mauna Kea,
+#                          La Palma, Teide, Paranal) reduces zenith optical depth
+#                          from τ=0.329 (mid-latitude average) to τ≈0.20, matching
+#                          published values for good optical sites at 850 nm.
+#                          Also lowers Cn²(0) by ~4× vs average suburban site.
+#
+#  eta_tx 0.45→0.55        [PROPOSAL: not stated — ASSUMED]
+#                          The OSIRIS-class terminal and QUBE-I heritage support
+#                          better coupling efficiency than the conservative 0.45
+#                          assumed from first principles. Target 0.55 is achievable
+#                          with AR-coated optics and optimised waveguide coupling.
+#                          Requires payload team confirmation.
+#
+#  eta_rx 0.40→0.50        [PROPOSAL: not stated — ASSUMED]
+#                          Improved OGS optical chain: high-reflectivity mirror
+#                          coatings (×0.98²), optimised bandpass filter (×0.92),
+#                          improved polarisation analyser alignment (×0.93), better
+#                          fibre coupling (×0.85) → product ≈ 0.50. Requires OGS
+#                          team confirmation.
+#
+#  sigma_pnt 2→1.5 µrad    [PROPOSAL: "2–5 µrad residual (APT/FSM)"]
+#                          1.5 µrad is within the stated range. FSM spec says
+#                          <0.1 µrad resolution and 100–500 Hz bandwidth — target
+#                          1.5 µrad RMS residual is achievable with tight beacon
+#                          loop tuning. Requires APT characterisation to confirm.
+#
+#  e_opt 0.035→0.025       [PROPOSAL: QBER budget sums to ~4–4.5% total]
+#                          Three improvements reduce the non-dark-count QBER:
+#                          (a) SNSPD dark counts are ~0.001% vs Si-SPAD ~0.3%,
+#                              so the dark count contribution nearly vanishes;
+#                          (b) Polarisation compensation improved from <1.0% to
+#                              <0.5% (QUARC/Bristol demonstrated <0.3%);
+#                          (c) Timing jitter reduced to <0.3% with FPGA 8ps clock.
+#                          Revised non-dark-count sum: 1.7%+0.5%+0.1%+0.3%=2.6%
+#                          → use 0.025 as conservative rounded estimate.
+#
+#  UNCHANGED (with rationale):
+#
+#  lambda_ 850 nm          Fixed by VCSEL and SNSPD hardware selection.
+#  f_clock 100 MHz         Already at SNSPD dead-time limit (τ_d=10 ns).
+#  mu 0.6                  Proposal design choice; moderate optimisation possible
+#                          but not the binding constraint.
+#  w0 0.04 m               Hard constraint from 80 mm transmit aperture (D_tx/2).
+#                          *** THIS IS THE BINDING CONSTRAINT — SEE NOTE BELOW ***
+#  D_rx 1.5 m              Already upgraded from 1.0 m. Larger impractical for
+#                          a mobile/temporary OGS.
+#  theta_el_min 20°        Analysis shows excluding low-elevation (<20°) timesteps
+#                          improves key fraction R per sifted bit. The low-elevation
+#                          data contributes n_key but the R per bit is so small that
+#                          it increases AEP correction faster than gross key.
+#  P_mu/P_nu/P_X           Protocol parameters; modest optimisation possible but
+#                          not the binding constraint.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# *** BINDING CONSTRAINT — TRANSMIT APERTURE ***
+#
+#  The 80 mm transmit aperture forces w0 ≤ 40 mm, which sets the far-field
+#  beam footprint at 400 km to ~14 m radius. The optimistic scenario uses
+#  w0=100 mm (implying a ~200 mm aperture), giving a 5.6 m beam radius and
+#  6.25× higher collection efficiency. This single factor explains the entire
+#  performance gap between this scenario and the optimistic reference.
+#
+#  A 100 mm transmit aperture is physically consistent with the 6U form factor
+#  (+Z face is 100×226 mm). This would allow w0≈50 mm, adding ~+2 dB to the
+#  link budget — the difference between ℓ_finite=0 and ℓ_finite>0 at 400 km.
+#  The team should treat transmit aperture as a design trade, not a fixed number.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: proposal1_revised
+description: "Proposal 1 with orbit, site, eta, pointing improvements — 400 km, 1.5 m OGS, SNSPD"
+
+overrides:
+
+  # ── Orbital geometry ──────────────────────────────────────────────────────
+  h_orbit: 400000            # CHANGED: 500→400 km. Orbit TBD per proposal.
+
+  # ── Ground station ────────────────────────────────────────────────────────
+  theta_el_min: 20.0         # KEPT: 20° — analysis shows this improves R/bit vs 10°
+  t_acq: 10.0
+
+  # ── Receiver optics ───────────────────────────────────────────────────────
+  D_rx: 1.5                  # kept: upgraded from proposal 1.0 m
+  eta_rx: 0.50               # CHANGED: 0.40→0.50 (improved OGS chain; confirm with OGS team)
+
+  # ── Transmitter / payload ─────────────────────────────────────────────────
+  eta_tx: 0.55               # CHANGED: 0.45→0.55 (improved TX chain; confirm with payload)
+  lambda_: 850.0e-9
+  w0: 0.04                   # KEPT: hard limit from 80 mm aperture (D_tx/2 = 40 mm)
+  mu: 0.6
+  nu: 0.1
+  P_mu: 0.6
+  P_nu: 0.3
+  P_X: 0.9
+  f_clock: 100.0e6           # kept: SNSPD allows 100 MHz
+  e_opt: 0.025               # CHANGED: 0.035→0.025 (SNSPD dark counts + better pol. comp.)
+
+  # ── Pointing ─────────────────────────────────────────────────────────────
+  theta_pnt: 0.0
+  sigma_pnt: 1.5e-6          # CHANGED: 2→1.5 µrad (within stated APT 2–5 µrad range)
+
+  # ── Atmosphere (good observatory site) ───────────────────────────────────
+  alpha: 5.0e-7              # CHANGED: τ_zenith=0.20 (good site) / 400e3
+  Cn2_0: 5.0e-15             # CHANGED: 1.7e-14→5e-15 (good astronomical site)
+  v_wind: 21.0
+
+  # ── Detector — SNSPD (from proposal_1) ────────────────────────────────────
+  eta_det: 0.85
+  dark_count_rate: 100.0
+  tau_dead: 10.0e-9
+
+  # ── Post-processing ───────────────────────────────────────────────────────
+  r_PE: 0.10
+  ec_algorithm: ldpc
+  epsilon_PA: 1.0e-10
+  rf_bandwidth: 25000        # upgraded from 9.6 kbps: ~24 kbps needed for 100 MHz SNSPD
+                             # → UHF 115.2 kbps or low-rate S-band satisfies this
+  dt_sim: 1.0

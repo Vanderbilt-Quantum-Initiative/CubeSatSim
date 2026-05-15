@@ -1,0 +1,49 @@
+name: vqi_400km
+description: "VQI primary scenario — 400 km, 850 nm, D_rx=1 m, Si-SPAD"
+
+overrides:
+
+  # ── Orbital geometry ──────────────────────────────────────────────────────
+  h_orbit: 400000            # 400 km
+
+  # ── Ground station ────────────────────────────────────────────────────────
+  gs_lat: 36.1               # Nashville OGS (deg N)
+  gs_lon: -86.7              # (deg E)
+  gs_alt_m: 182.0            # m above WGS84
+  theta_el_min: 10.0         # deg
+  t_acq: 15.0                # s
+
+  # ── Receiver optics ───────────────────────────────────────────────────────
+  D_rx: 1.0                  # m
+  eta_rx: 0.45
+
+  # ── Transmitter / payload ─────────────────────────────────────────────────
+  eta_tx: 0.50
+  lambda_: 850.0e-9          # m
+  w0: 0.08                   # m
+  mu: 0.5                    # photons/pulse
+  nu: 0.1                    # photons/pulse
+  P_mu: 0.6
+  P_nu: 0.3
+  P_X: 0.9
+  f_clock: 100.0e6           # Hz
+  e_opt: 0.03
+
+  # ── Pointing (ADCS) ───────────────────────────────────────────────────────
+  sigma_pnt: 2.0e-6          # rad
+
+  # ── Atmosphere ────────────────────────────────────────────────────────────
+  alpha: 8.225e-7            # = 0.329 / 400e3 (1/m)
+  Cn2_0: 1.7e-14             # m^{-2/3}
+
+  # ── Detector ─────────────────────────────────────────────────────────────
+  eta_det: 0.60
+  dark_count_rate: 500.0     # counts/s
+  tau_dead: 50.0e-9          # s
+
+  # ── Post-processing ───────────────────────────────────────────────────────
+  r_PE: 0.10
+  ec_algorithm: ldpc
+  epsilon_PA: 1.0e-10
+  rf_bandwidth: 10.0e6       # bits/s
+  dt_sim: 1.0                # s

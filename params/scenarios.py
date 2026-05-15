@@ -207,5 +207,84 @@ def get_scenario(name: str) -> dict:
 
 
 def list_scenarios() -> list[str]:
-    """Return names of all registered scenarios."""
+    """Return names of all registered scenarios (built-in + any loaded from YAML)."""
     return sorted(SCENARIOS)
+
+
+# ---------------------------------------------------------------------------
+# YAML scenario loading
+# ---------------------------------------------------------------------------
+
+def load_yaml(path: str) -> dict:
+    """Load a scenario from a YAML file and return its override dict.
+
+    The YAML file must have a top-level 'overrides' key containing the
+    parameter values.  An optional 'name' key registers the scenario so it
+    can be retrieved later by get_scenario().
+
+    Example
+    -------
+        overrides:
+          D_rx: 1.2
+          h_orbit: 450000
+          Cn2_0: 5.0e-15
+
+    Args:
+        path: Path to the YAML file (absolute or relative to cwd).
+
+    Returns:
+        Override dict suitable for ParameterRegistry.update().
+
+    Raises:
+        FileNotFoundError: if the file does not exist.
+        ValueError: if the file is missing the 'overrides' key.
+    """
+    import yaml
+
+    with open(path, "r") as f:
+        data = yaml.safe_load(f)
+
+    if "overrides" not in data:
+        raise ValueError(
+            f"YAML scenario file {path!r} must have a top-level 'overrides' key."
+        )
+
+    overrides = data["overrides"] or {}
+
+    # Register under 'name' if provided so get_scenario() can find it later
+    name = data.get("name")
+    if name:
+        SCENARIOS[name] = overrides
+
+    return dict(overrides)
+
+
+def load_yaml_dir(directory: str) -> list[str]:
+    """Load all *.yaml files in a directory as scenarios.
+
+    Each file must follow the same format as load_yaml().  Files without a
+    'name' key are skipped.
+
+    Returns:
+        List of scenario names that were registered.
+    """
+    import os
+    import yaml
+
+    registered = []
+    for fname in sorted(os.listdir(directory)):
+        if not fname.endswith((".yaml", ".yml")):
+            continue
+        path = os.path.join(directory, fname)
+        try:
+            load_yaml(path)
+            # Check if it registered a name
+            with open(path) as f:
+                data = yaml.safe_load(f)
+            if "name" in data:
+                registered.append(data["name"])
+        except Exception as e:
+            import warnings
+            warnings.warn(f"Skipping {fname}: {e}")
+
+    return registered

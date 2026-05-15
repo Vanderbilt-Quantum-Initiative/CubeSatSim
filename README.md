@@ -105,6 +105,9 @@ CubeSatSim/
 │   ├── registry.py         Parameter store with bounds checking and typed config builders
 │   └── scenarios.py        Named scenario overrides (vqi_400km, optimistic, conservative, …)
 │
+├── scenarios/
+│   └── template.yaml       Fully documented YAML template — copy and rename to add a site
+│
 ├── analysis/
 │   ├── sensitivity.py      Normalised elasticity (central finite differences) + tornado plot
 │   └── sweep.py            1D/2D parameter sweeps + contour heatmaps
@@ -166,6 +169,8 @@ Stage 6 — Post-processing & finite-key correction
 
 ## Scenarios
 
+### Built-in scenarios
+
 | Scenario | h_orbit | D_rx | f_clock | ℓ_finite (typical good pass) |
 |----------|---------|------|---------|-------------------------------|
 | `conservative` | 400 km | 0.5 m | 50 MHz | 0 (AEP-limited) |
@@ -176,6 +181,41 @@ Stage 6 — Post-processing & finite-key correction
 "Typical good pass" = 54° maximum elevation, 07:00 UTC, Nashville OGS (36.1°N, 86.7°W).
 
 The `vqi_400km` scenario sits right at the AEP breakeven boundary — it needs either a slightly larger aperture, a higher-elevation pass, or an SNSPD (to avoid the 100 MHz > 1/τ_d dead-time violation flagged at runtime).
+
+### Custom scenarios via YAML
+
+Drop a YAML file into `scenarios/` (or any path) to override any subset of parameters without touching Python:
+
+```yaml
+name: my_site
+description: "Edinburgh OGS with larger aperture"
+
+overrides:
+  gs_lat: 55.9
+  gs_lon: -3.2
+  gs_alt_m: 50.0
+  D_rx: 1.2
+  Cn2_0: 5.0e-15
+```
+
+Load it at runtime:
+
+```python
+from params.scenarios import load_yaml
+from params.registry import ParameterRegistry
+
+reg = ParameterRegistry()
+reg.update(load_yaml("scenarios/my_site.yaml"))
+```
+
+Or load every YAML in the directory at once:
+
+```python
+from params.scenarios import load_yaml_dir
+names = load_yaml_dir("scenarios/")   # returns list of registered names
+```
+
+Only include the parameters you want to override — everything else inherits from the baseline defaults in `params/definitions.py`. See `scenarios/template.yaml` for a fully documented starting point.
 
 ---
 

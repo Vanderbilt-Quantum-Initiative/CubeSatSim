@@ -1,0 +1,46 @@
+name: conservative
+description: "Conservative — D_rx=0.5 m, Si-SPAD, typical atmosphere, relaxed pointing"
+
+overrides:
+
+  # ── Orbital geometry ──────────────────────────────────────────────────────
+  h_orbit: 400000
+
+  # ── Ground station ────────────────────────────────────────────────────────
+  theta_el_min: 20.0         # deg — higher cut to limit slant path
+  t_acq: 20.0                # s
+
+  # ── Receiver optics ───────────────────────────────────────────────────────
+  D_rx: 0.50                 # m
+  eta_rx: 0.35
+
+  # ── Transmitter / payload ─────────────────────────────────────────────────
+  eta_tx: 0.40
+  lambda_: 850.0e-9
+  w0: 0.08                   # m
+  mu: 0.5
+  nu: 0.1
+  P_mu: 0.6
+  P_nu: 0.3
+  P_X: 0.9
+  f_clock: 50.0e6            # Hz — halved clock rate
+  e_opt: 0.05                # looser polarisation compensation
+
+  # ── Pointing (ADCS) ───────────────────────────────────────────────────────
+  sigma_pnt: 5.0e-6          # rad — typical low-cost ADCS
+
+  # ── Atmosphere ────────────────────────────────────────────────────────────
+  alpha: 1.0e-6              # = 0.40 / 400e3 — turbid site
+  Cn2_0: 5.0e-14             # m^{-2/3} — moderate turbulence
+
+  # ── Detector — Si-SPAD ───────────────────────────────────────────────────
+  eta_det: 0.50
+  dark_count_rate: 1000.0    # counts/s
+  tau_dead: 50.0e-9          # s
+
+  # ── Post-processing ───────────────────────────────────────────────────────
+  r_PE: 0.10
+  ec_algorithm: ldpc
+  epsilon_PA: 1.0e-10
+  rf_bandwidth: 10.0e6
+  dt_sim: 1.0

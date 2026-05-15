@@ -34,12 +34,47 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.types import DetectionResult, DecoyBounds
+from core.types import DetectionResult, DecoyBounds, EURDecoyBounds
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _kato_slack(n: float, delta: float, p_est: float) -> float:
+    """
+    Kato (2020) / empirical Bernstein concentration bound.
+
+    Tighter than Hoeffding for rare events (small p_est).  For Bernoulli(p)
+    with n i.i.d. trials and observed frequency p_est, the true probability
+    lies within ±slack of p_est with probability ≥ 1−delta.
+
+        slack = √(2 · p_est · (1−p_est) · ln(1/δ) / n) + ln(1/δ) / (3n)
+
+    The variance-scaled √ term shrinks as p_est→0, unlike the Hoeffding bound
+    whose √(ln(1/δ)/(2n)) is constant.  For decoy/vacuum yields (p~10⁻⁴),
+    Kato is 20–50× tighter than Hoeffding.
+
+    Reference: Kato (2020), arXiv:2002.04357;
+               Maurer & Pontil (2009) — empirical Bernstein inequality.
+
+    Args:
+        n:      Number of Bernoulli trials (must match the event type: pulses
+                for gain estimation, detections for QBER estimation).
+        delta:  Per-bound failure probability (1 − confidence).
+        p_est:  Observed sample frequency (point estimate of p).
+
+    Returns:
+        Slack (additive; non-negative).
+    """
+    if n <= 0.0:
+        return 0.5
+    p_est = max(0.0, min(1.0, p_est))
+    log_inv_delta = math.log(1.0 / delta)
+    variance_term = math.sqrt(2.0 * p_est * (1.0 - p_est) * log_inv_delta / n)
+    third_moment  = log_inv_delta / (3.0 * n)
+    return variance_term + third_moment
+
 
 def _hoeffding_slack(n: float, delta: float) -> float:
     """
@@ -289,3 +324,134 @@ def finite_bounds(
     e1_U = _e1_upper(E_nu_adv, Q_nu_adv, Y_0, Q1_L, mu, nu)
 
     return DecoyBounds(Q1_lower=Q1_L, e1_upper=e1_U, mode="finite")
+
+
+def eur_decoy_bounds(
+    n_Z: dict[str, float],       # key-basis detections: {"signal", "decoy", "vacuum"}
+    n_X: dict[str, float],       # test-basis detections per intensity
+    m_X: dict[str, float],       # test-basis errors per intensity
+    N_pulses: dict[str, float],  # total pulses per intensity (for correct trial counts)
+    mu: float,
+    nu: float,
+    P_X: float,                  # key-basis preparation probability
+    Y_0: float,                  # calibrated vacuum yield (dark count probability per gate)
+    epsilon_s: float = 1e-11,    # per-bound statistical failure probability
+    concentration: str = "kato", # "kato" (recommended) or "hoeffding"
+) -> EURDecoyBounds:
+    """
+    EUR-compatible decoy-state bounds from per-basis, per-intensity observations.
+
+    Uses test-basis (minority, 1-P_X) observations for parameter estimation via
+    Ma et al. (2005) decoy analysis with Kato concentration inequalities, then
+    maps the resulting per-photon-number yields to key-basis counts to produce
+    the EUR formula inputs: s_Z0^L, s_Z1^L, φ_Z^U.
+
+    Per-basis split of detections:
+        key basis: fraction P_X²   of matched pulses per intensity
+        test basis: fraction (1-P_X)² of matched pulses per intensity
+
+    The key-basis data is fully allocated to key generation (no PE split needed
+    — parameter estimation is done entirely from the test-basis minority data).
+
+    Statistical correction selection (Section 3.3 of FixedFiniteKeyRate.md):
+        gain slack  → uses PULSE counts  (Bernoulli on pulses)
+        QBER slack  → uses DETECTION counts (Bernoulli on detections)
+
+    References:
+        Lim, Curty, Walenta, Xu & Zbinden (2014), PRA 89, 022307
+        Wiesemann et al. (2026), Quantum 10, 2037
+        Kato (2020), arXiv:2002.04357
+
+    Args:
+        n_Z:         Key-basis detection counts per intensity.
+        n_X:         Test-basis detection counts per intensity.
+        m_X:         Test-basis error counts per intensity.
+        N_pulses:    Total pulse counts per intensity across the full pass.
+        mu:          Signal intensity (photons/pulse).
+        nu:          Weak-decoy intensity (photons/pulse); 0 < ν < μ.
+        P_X:         Key-basis preparation probability (high P_X → efficient BB84).
+        Y_0:         Calibrated noise yield per gate (dark counts / f_clock).
+        epsilon_s:   Per-bound statistical failure probability.
+        concentration: Concentration inequality to use ("kato" or "hoeffding").
+
+    Returns:
+        EURDecoyBounds with s_Z0^L, s_Z1^L, φ_Z^U and diagnostic fields.
+    """
+    if not (0.0 < nu < mu):
+        raise ValueError(f"Require 0 < ν < μ; got ν={nu}, μ={mu}")
+    if not (0.0 < P_X < 1.0):
+        raise ValueError(f"P_X must be in (0, 1); got {P_X}")
+
+    P_test = 1.0 - P_X
+
+    N_sig = N_pulses.get("signal", 0.0)
+    N_dec = N_pulses.get("decoy", 0.0)
+
+    # Test-basis effective "matched" pulse counts (both parties chose test basis)
+    N_sig_test = N_sig * P_test ** 2
+    N_dec_test = N_dec * P_test ** 2
+
+    n_X_sig = n_X.get("signal", 0.0)
+    n_X_dec = n_X.get("decoy", 0.0)
+
+    # Observed test-basis gains (per matched test pulse)
+    Q_mu_test = n_X_sig / N_sig_test if N_sig_test > 0 else 0.0
+    Q_nu_test = n_X_dec / N_dec_test if N_dec_test > 0 else 0.0
+    E_nu_test = m_X.get("decoy", 0.0) / n_X_dec if n_X_dec > 0 else 0.5
+
+    # Statistical slack function (correct trial counts per §3.4)
+    def slack(n_trials: float, p_est: float) -> float:
+        if concentration == "kato":
+            return _kato_slack(n_trials, epsilon_s, p_est)
+        return _hoeffding_slack(n_trials, epsilon_s)
+
+    # Gain slacks use PULSE counts (trials = pulses sent in test basis)
+    # QBER slack uses DETECTION counts (trials = detections)
+    slack_Q_mu = slack(N_sig_test, Q_mu_test)
+    slack_Q_nu = slack(N_dec_test, Q_nu_test)
+    slack_E_nu = slack(n_X_dec, E_nu_test)
+
+    # Adversarial rates: push each bound in the direction that shrinks the key
+    Q_mu_adv = min(1.0, Q_mu_test + slack_Q_mu)   # ↑ Q_mu → smaller Q1^L bracket
+    Q_nu_adv = max(0.0, Q_nu_test - slack_Q_nu)   # ↓ Q_nu → smaller Q1^L bracket
+    E_nu_adv = min(0.5, E_nu_test + slack_E_nu)   # ↑ E_nu → larger e1^U
+
+    # Ma et al. (2005) single-photon gain lower bound from test-basis data
+    Q1_L = _q1_lower(Q_mu_adv, Q_nu_adv, Y_0, mu, nu)
+
+    # Single-photon yield lower bound: Y1^L = Q1^L / P(1|μ) = Q1^L / (μ e^{−μ})
+    P1_mu = mu * math.exp(-mu)
+    Y1_lower = Q1_L / P1_mu if P1_mu > 0 else 0.0
+
+    # Phase error rate upper bound — EUR connection:
+    #   φ_Z^U (phase error in key basis) = e1^U (bit error of single-photons in test basis)
+    e1_U = _e1_upper(E_nu_adv, Q_nu_adv, Y_0, Q1_L, mu, nu)
+    phi_Z_upper = e1_U
+
+    # ── Key-basis single-photon count lower bound ─────────────────────────────
+    n_Z_sig = n_Z.get("signal", 0.0)
+    N_sig_key = N_sig * P_X ** 2   # key-basis matched signal pulses
+
+    # Q_mu in key basis = n_Z_sig / N_sig_key (should equal Q_mu_test; use adversarial)
+    Q_mu_key_adv = n_Z_sig / N_sig_key if N_sig_key > 0 else 0.0
+    # Use max of adversarial Q_mu_adv and key-basis estimate for the denominator
+    Q_mu_denom = max(Q_mu_key_adv, Q_mu_adv)
+
+    if Q_mu_denom > 0 and n_Z_sig > 0:
+        # s_Z1^L = n_Z_sig × Q1^L / Q_mu  — fraction of key detections from single photons
+        s_Z1_lower = max(0.0, n_Z_sig * Q1_L / Q_mu_denom)
+    else:
+        s_Z1_lower = 0.0
+
+    # ── Key-basis vacuum count lower bound ────────────────────────────────────
+    # Vacuum-source detections in key basis are directly accumulated.
+    s_Z0_lower = n_Z.get("vacuum", 0.0)
+
+    return EURDecoyBounds(
+        s_Z0_lower=s_Z0_lower,
+        s_Z1_lower=s_Z1_lower,
+        phi_Z_upper=phi_Z_upper,
+        Y0_bound=Y_0,
+        Y1_lower=Y1_lower,
+        e1_upper=e1_U,
+    )

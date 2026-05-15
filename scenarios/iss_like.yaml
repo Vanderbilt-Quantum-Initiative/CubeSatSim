@@ -1,0 +1,50 @@
+name: iss_like
+description: "ISS-like orbit — 400 km, 51.6° inclination, otherwise identical to vqi_400km"
+
+overrides:
+
+  # ── Orbital geometry ──────────────────────────────────────────────────────
+  h_orbit: 400000
+  inclination: 51.6          # deg — ISS inclination
+
+  # ── Ground station ────────────────────────────────────────────────────────
+  gs_lat: 36.1
+  gs_lon: -86.7
+  gs_alt_m: 182.0
+  theta_el_min: 10.0
+  t_acq: 15.0
+
+  # ── Receiver optics ───────────────────────────────────────────────────────
+  D_rx: 1.0
+  eta_rx: 0.45
+
+  # ── Transmitter / payload ─────────────────────────────────────────────────
+  eta_tx: 0.50
+  lambda_: 850.0e-9
+  w0: 0.08
+  mu: 0.5
+  nu: 0.1
+  P_mu: 0.6
+  P_nu: 0.3
+  P_X: 0.9
+  f_clock: 100.0e6
+  e_opt: 0.03
+
+  # ── Pointing (ADCS) ───────────────────────────────────────────────────────
+  sigma_pnt: 2.0e-6
+
+  # ── Atmosphere ────────────────────────────────────────────────────────────
+  alpha: 8.225e-7            # = 0.329 / 400e3
+  Cn2_0: 1.7e-14
+
+  # ── Detector ─────────────────────────────────────────────────────────────
+  eta_det: 0.60
+  dark_count_rate: 500.0
+  tau_dead: 50.0e-9
+
+  # ── Post-processing ───────────────────────────────────────────────────────
+  r_PE: 0.10
+  ec_algorithm: ldpc
+  epsilon_PA: 1.0e-10
+  rf_bandwidth: 10.0e6
+  dt_sim: 1.0

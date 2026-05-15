@@ -9,7 +9,8 @@ Organisation:
     2. Geometry and configuration inputs  (Geometry, ChannelConfig, SourceConfig,
                                            PostProcessingConfig)
     3. Physics intermediate outputs        (LossBudget, DetectionResult,
-                                           DecoyBounds, KeyRateResult,
+                                           DecoyBounds, EURDecoyBounds,
+                                           SecurityBudget, KeyRateResult,
                                            PostProcessingResult)
     4. Composite state containers          (LinkState, PassResult)
 """
@@ -239,6 +240,47 @@ class DecoyBounds:
 
 
 @dataclass
+class EURDecoyBounds:
+    """
+    EUR-based decoy-state bounds for per-basis, per-photon-number analysis.
+
+    Produced by physics/decoy.eur_decoy_bounds() using per-basis, per-intensity
+    counts from the accumulator.  Inputs to eur_key_length().
+
+    Reference: Lim, Curty, Walenta, Xu & Zbinden (2014), PRA 89, 022307;
+               Wiesemann et al. (2026), Quantum 10, 2037.
+    """
+    s_Z0_lower: float   # lower bound on vacuum-source detections in key basis
+    s_Z1_lower: float   # lower bound on single-photon detections in key basis
+    phi_Z_upper: float  # upper bound on single-photon phase error rate in key basis
+
+    # Diagnostic intermediates
+    Y0_bound: float     # vacuum yield used (calibrated)
+    Y1_lower: float     # single-photon yield lower bound (basis-independent)
+    e1_upper: float     # test-basis single-photon QBER upper bound (= phi_Z via EUR)
+
+
+@dataclass
+class SecurityBudget:
+    """
+    Security parameter composition for EUR finite-key proof.
+
+    The total composable security parameter epsilon_total is subdivided equally
+    across n_terms failure sub-events (parameter estimation, EC, PA, smoothing).
+    For Phase 1, equal subdivision is used; future work can optimise the split.
+
+    Reference: Lim et al. (2014) §III; Wiesemann et al. (2026) §IV.
+    """
+    epsilon_total: float = 1e-10    # total composable security parameter
+    n_terms: int = 6                # number of sub-events to cover
+
+    @property
+    def epsilon_sub(self) -> float:
+        """Per-sub-event security parameter."""
+        return self.epsilon_total / self.n_terms
+
+
+@dataclass
 class KeyRateResult:
     """
     Secret key rate outputs.
@@ -334,3 +376,6 @@ class PassResult:
     # --- Validation diagnostics ---
     jensen_gain_gap: float      # Q_mu(mean_eta) - <Q_mu(eta)>; must be > 0
     jensen_qber_gap: float      # <QBER(eta)> - QBER(mean_eta);  must be > 0
+
+    # --- EUR-specific (None when proof_method="aep") ---
+    eur_decoy_bounds: "EURDecoyBounds | None" = None

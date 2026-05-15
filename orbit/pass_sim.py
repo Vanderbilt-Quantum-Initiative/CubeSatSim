@@ -45,18 +45,25 @@ import numpy as np
 
 from core.types import (
     DecoyBounds,
+    EURDecoyBounds,
     Geometry,
     KeyRateResult,
     LinkState,
     PassResult,
     PostProcessingResult,
+    SecurityBudget,
     SourceConfig,
 )
 from core.evaluator import evaluate_point
 from orbit.geometry import create_satellite, elevation_profile, usable_window
 from physics.atmosphere import hufnagel_valley
-from physics.decoy import asymptotic_bounds, finite_bounds
-from physics.keyrate import gllp_asymptotic, finite_key_length, binary_entropy
+from physics.decoy import asymptotic_bounds, finite_bounds, eur_decoy_bounds
+from physics.keyrate import (
+    gllp_asymptotic,
+    finite_key_length,
+    eur_key_length,
+    binary_entropy,
+)
 from physics.post_processing import (
     ec_efficiency,
     classical_bandwidth_check,
@@ -78,7 +85,8 @@ class AccumulationStrategy(Protocol):
 
 @dataclass
 class AccumulationResult:
-    n_signal: float          # total expected signal-intensity detections
+    # Basis-summed totals (AEP path / backward-compatible)
+    n_signal: float          # total expected signal-intensity detections (both bases)
     n_decoy: float           # total expected decoy-intensity detections
     n_vacuum: float          # total expected vacuum detections
     E_mu_weighted: float     # detection-weighted mean signal QBER
@@ -87,20 +95,51 @@ class AccumulationResult:
     Q_nu_avg: float          # time-averaged decoy gain
     n_timesteps: int         # number of timesteps accumulated
 
+    # Per-basis counts for EUR path (added in EUR upgrade)
+    # Key basis (dominant, P_X): provides key generation bits
+    n_Z_signal: float = 0.0  # key-basis signal detections
+    n_Z_decoy: float = 0.0   # key-basis decoy detections  (informational)
+    n_Z_vacuum: float = 0.0  # key-basis vacuum detections (→ s_Z0^L)
+    # Test basis (minority, 1-P_X): provides parameter estimation data
+    n_X_signal: float = 0.0  # test-basis signal detections
+    n_X_decoy: float = 0.0   # test-basis decoy detections
+    m_X_signal: float = 0.0  # test-basis signal errors
+    m_X_decoy: float = 0.0   # test-basis decoy errors
+    # Pulse counts (for correct Hoeffding/Kato trial denominators)
+    N_sig_pulses: float = 0.0   # total signal pulses sent = f_clock * P_mu * T_pass
+    N_dec_pulses: float = 0.0   # total decoy pulses sent  = f_clock * P_nu * T_pass
+
 
 class StandardAccumulation:
-    """Default accumulation strategy: detection-weighted QBER, Poisson counts."""
+    """Default accumulation strategy: detection-weighted QBER, Poisson counts.
+
+    Tracks both basis-summed totals (for AEP path) and per-basis counts
+    (for EUR path).  Per-basis split uses the key-basis probability P_X:
+        key basis  (dominant): fraction P_X²   of matched sifted pulses
+        test basis (minority): fraction (1-P_X)² of matched sifted pulses
+    """
 
     def __init__(self, f_clock: float) -> None:
         self._f_clock = f_clock
-        self._n_sig    = 0.0
-        self._n_dec    = 0.0
-        self._n_vac    = 0.0
-        self._wqber_sig = 0.0   # sum of Q_mu * E_mu * dt (numerator for weighted QBER)
+        # Basis-summed totals
+        self._n_sig     = 0.0
+        self._n_dec     = 0.0
+        self._n_vac     = 0.0
+        self._wqber_sig = 0.0
         self._wqber_dec = 0.0
         self._sum_Q_mu  = 0.0
         self._sum_Q_nu  = 0.0
         self._steps     = 0
+        # Per-basis EUR counts
+        self._n_Z_sig   = 0.0
+        self._n_Z_dec   = 0.0
+        self._n_Z_vac   = 0.0
+        self._n_X_sig   = 0.0
+        self._n_X_dec   = 0.0
+        self._m_X_sig   = 0.0   # test-basis signal errors
+        self._m_X_dec   = 0.0   # test-basis decoy errors
+        self._N_sig_pulses = 0.0
+        self._N_dec_pulses = 0.0
 
     def accumulate(self, dt: float, link_state: LinkState,
                    source: SourceConfig) -> None:
@@ -108,24 +147,45 @@ class StandardAccumulation:
         dec = link_state.detections["decoy"]
         vac = link_state.detections["vacuum"]
         q   = source.sifting_factor()
+        P_X = source.P_X
+        P_test = 1.0 - P_X
 
-        # Expected detections per timestep per intensity
-        # n_mu = f_clock * P_mu * Q_mu * q * dt
+        # ── Basis-summed totals (AEP path) ─────────────────────────────────
         dn_sig = self._f_clock * source.P_mu  * sig.Q * q * dt
-        dn_dec = self._f_clock * source.P_nu  * dec.Q     * dt  # decoy not sifted
+        dn_dec = self._f_clock * source.P_nu  * dec.Q     * dt
         dn_vac = self._f_clock * source.P_vac * vac.Q     * dt
 
         self._n_sig += dn_sig
         self._n_dec += dn_dec
         self._n_vac += dn_vac
-
-        # Detection-weighted QBER numerator
         self._wqber_sig += sig.E * dn_sig
         self._wqber_dec += dec.E * dn_dec
+        self._sum_Q_mu  += sig.Q
+        self._sum_Q_nu  += dec.Q
+        self._steps     += 1
 
-        self._sum_Q_mu += sig.Q
-        self._sum_Q_nu += dec.Q
-        self._steps    += 1
+        # ── Per-basis EUR counts ────────────────────────────────────────────
+        # Key-basis matched detections (fraction P_X² of matched sifted pulses)
+        dn_Z_sig = self._f_clock * source.P_mu  * sig.Q * P_X    ** 2 * dt
+        dn_Z_dec = self._f_clock * source.P_nu  * dec.Q * P_X    ** 2 * dt
+        dn_Z_vac = self._f_clock * source.P_vac * vac.Q * P_X    ** 2 * dt
+        # Test-basis matched detections (fraction (1-P_X)² of matched sifted pulses)
+        dn_X_sig = self._f_clock * source.P_mu  * sig.Q * P_test ** 2 * dt
+        dn_X_dec = self._f_clock * source.P_nu  * dec.Q * P_test ** 2 * dt
+
+        self._n_Z_sig += dn_Z_sig
+        self._n_Z_dec += dn_Z_dec
+        self._n_Z_vac += dn_Z_vac
+        self._n_X_sig += dn_X_sig
+        self._n_X_dec += dn_X_dec
+
+        # Test-basis errors (QBER × detections in that basis)
+        self._m_X_sig += sig.E * dn_X_sig
+        self._m_X_dec += dec.E * dn_X_dec
+
+        # Pulse counts (independent of detection, for Hoeffding/Kato denominators)
+        self._N_sig_pulses += self._f_clock * source.P_mu * dt
+        self._N_dec_pulses += self._f_clock * source.P_nu * dt
 
     def finalise(self) -> AccumulationResult:
         E_mu = self._wqber_sig / self._n_sig if self._n_sig > 0 else 0.5
@@ -141,6 +201,16 @@ class StandardAccumulation:
             Q_mu_avg=Q_mu_avg,
             Q_nu_avg=Q_nu_avg,
             n_timesteps=self._steps,
+            # EUR per-basis fields
+            n_Z_signal=self._n_Z_sig,
+            n_Z_decoy=self._n_Z_dec,
+            n_Z_vacuum=self._n_Z_vac,
+            n_X_signal=self._n_X_sig,
+            n_X_decoy=self._n_X_dec,
+            m_X_signal=self._m_X_sig,
+            m_X_decoy=self._m_X_dec,
+            N_sig_pulses=self._N_sig_pulses,
+            N_dec_pulses=self._N_dec_pulses,
         )
 
 
@@ -168,6 +238,7 @@ def simulate_pass(
     t_end: datetime | None = None,
     accumulation: AccumulationStrategy | None = None,
     decoy_mode: str = "finite",
+    proof_method: str = "eur",
 ) -> PassResult:
     """Run a full satellite pass simulation.
 
@@ -184,6 +255,11 @@ def simulate_pass(
         Accumulation strategy.  Defaults to StandardAccumulation.
     decoy_mode
         "finite" (composably secure, default) or "asymptotic" (design exploration).
+    proof_method
+        "eur" (default) — EUR-based finite-key formula with O(log 1/ε) corrections.
+        "aep"           — Tomamichel et al. (2012) AEP formula with O(√n) corrections.
+        EUR is strictly tighter than AEP at all practical block sizes; use "aep"
+        only for comparison or backward-compatibility checks.
 
     Returns
     -------
@@ -306,24 +382,50 @@ def simulate_pass(
                               intensity=source.nu, n_counts=acc.n_decoy)
     vac_obs = DetectionResult(Q=0.0, E=0.5, intensity=0.0, n_counts=acc.n_vacuum)
 
-    # Y_0: dark count probability per gate
     Y_0 = detector.dark_count_rate() / source.f_clock
 
-    # Pulse counts for Hoeffding bounds.
-    # Q_mu is a frequency estimated from signal pulses; Q_nu from decoy pulses.
-    # All decoy pulses go to PE (they never contribute to the sifted key).
-    # The signal PE fraction r_PE is used here consistently with pe_split below.
-    n_mu_pulses_PE = source.f_clock * source.P_mu * T_pass  # all signal pulses
-    n_nu_pulses_PE = source.f_clock * source.P_nu * T_pass  # all decoy pulses → all PE
+    eur_b: EURDecoyBounds | None = None
+    decoy_b: DecoyBounds
 
-    if decoy_mode == "finite":
+    if proof_method == "eur" and decoy_mode != "asymptotic":
+        # EUR path: per-basis, per-intensity analysis with Kato concentration
+        budget = SecurityBudget(epsilon_total=pp_cfg.epsilon_PA, n_terms=6)
+        n_Z = {"signal": acc.n_Z_signal, "decoy": acc.n_Z_decoy,
+               "vacuum": acc.n_Z_vacuum}
+        n_X = {"signal": acc.n_X_signal, "decoy": acc.n_X_decoy}
+        m_X = {"signal": acc.m_X_signal, "decoy": acc.m_X_decoy}
+        N_pulses = {"signal": acc.N_sig_pulses, "decoy": acc.N_dec_pulses}
+
+        eur_b = eur_decoy_bounds(
+            n_Z=n_Z, n_X=n_X, m_X=m_X, N_pulses=N_pulses,
+            mu=source.mu, nu=source.nu,
+            P_X=source.P_X,
+            Y_0=Y_0,
+            epsilon_s=budget.epsilon_sub,
+            concentration="kato",
+        )
+        # Also compute a DecoyBounds for GLLP R and diagnostic use
         decoy_b = finite_bounds(
             sig_obs, dec_obs, vac_obs,
             source.mu, source.nu, Y_0,
             n_PE=acc.n_signal * pp_cfg.r_PE,
             confidence=0.99,
-            n_mu_pulses=n_mu_pulses_PE,
-            n_nu_pulses=n_nu_pulses_PE,
+            n_mu_pulses=acc.N_sig_pulses,
+            n_nu_pulses=acc.N_dec_pulses,
+            n_nu_detections=acc.n_decoy,
+        )
+        logger.info(
+            "EUR decoy bounds: s_Z0^L=%.2e  s_Z1^L=%.2e  φ_Z^U=%.4f",
+            eur_b.s_Z0_lower, eur_b.s_Z1_lower, eur_b.phi_Z_upper,
+        )
+    elif decoy_mode == "finite":
+        decoy_b = finite_bounds(
+            sig_obs, dec_obs, vac_obs,
+            source.mu, source.nu, Y_0,
+            n_PE=acc.n_signal * pp_cfg.r_PE,
+            confidence=0.99,
+            n_mu_pulses=acc.N_sig_pulses,
+            n_nu_pulses=acc.N_dec_pulses,
             n_nu_detections=acc.n_decoy,
         )
     else:
@@ -336,7 +438,7 @@ def simulate_pass(
                 decoy_mode, decoy_b.Q1_lower, decoy_b.e1_upper)
 
     # ── 7. Post-processing chain ──────────────────────────────────────────
-    n_sifted = acc.n_signal   # already sifting-corrected in accumulation
+    n_sifted = acc.n_signal   # total sifted (both bases), for AEP path
     n_PE, n_key = pe_split(n_sifted, pp_cfg.r_PE)
 
     f_EC = ec_efficiency(n_key, acc.E_mu_weighted, pp_cfg.ec_algorithm)
@@ -344,7 +446,14 @@ def simulate_pass(
         n_sifted, acc.E_mu_weighted, f_EC,
         pp_cfg.ec_algorithm, T_pass, pp_cfg.rf_bandwidth,
     )
-    leak_EC = n_key * f_EC * binary_entropy(acc.E_mu_weighted)
+
+    # EC leakage: AEP uses n_key (after PE split); EUR uses n_Z_signal (no PE split)
+    if proof_method == "eur" and eur_b is not None:
+        n_key_eur = acc.n_Z_signal           # key-basis signal detections (full use)
+        leak_EC   = n_key_eur * f_EC * binary_entropy(acc.E_mu_weighted)
+    else:
+        n_key_eur = n_key
+        leak_EC   = n_key * f_EC * binary_entropy(acc.E_mu_weighted)
 
     pp_result = PostProcessingResult(
         n_sifted=n_sifted,
@@ -359,13 +468,27 @@ def simulate_pass(
 
     # ── 8. Key rate ───────────────────────────────────────────────────────
     R = gllp_asymptotic(decoy_b, sig_obs, q, f_EC)
-    ell_finite = finite_key_length(n_key, R, acc.E_mu_weighted, f_EC, pp_cfg.epsilon_PA)
     skbr = source.f_clock * R
+
+    if proof_method == "eur" and eur_b is not None:
+        budget = SecurityBudget(epsilon_total=pp_cfg.epsilon_PA, n_terms=6)
+        ell_finite = eur_key_length(
+            s_Z0_lower=eur_b.s_Z0_lower,
+            s_Z1_lower=eur_b.s_Z1_lower,
+            phi_Z_upper=eur_b.phi_Z_upper,
+            leak_EC=leak_EC,
+            epsilon=budget.epsilon_sub,
+            epsilon_PA=budget.epsilon_sub,
+        )
+    else:
+        ell_finite = finite_key_length(
+            n_key, R, acc.E_mu_weighted, f_EC, pp_cfg.epsilon_PA
+        )
 
     kr_result = KeyRateResult(R=R, skbr=skbr, ell_finite=ell_finite)
 
-    logger.info("Key rate: R=%.4e  ℓ_finite=%.2e bits  go=%s",
-                R, ell_finite, ell_finite > 0)
+    logger.info("Key rate (%s): R=%.4e  ℓ_finite=%.2e bits  go=%s",
+                proof_method, R, ell_finite, ell_finite > 0)
 
     # ── 9. Assemble PassResult ────────────────────────────────────────────
     jensen_gain_gap = float(np.mean(jensen_gain_gaps)) if jensen_gain_gaps else 0.0
@@ -386,6 +509,7 @@ def simulate_pass(
         post_processing=pp_result,
         decoy_bounds=decoy_b,
         key_rate=kr_result,
+        eur_decoy_bounds=eur_b,
         jensen_gain_gap=jensen_gain_gap,
         jensen_qber_gap=jensen_qber_gap,
     )

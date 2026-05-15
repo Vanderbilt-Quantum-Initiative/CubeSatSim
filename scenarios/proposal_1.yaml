@@ -1,0 +1,99 @@
+# PROPOSAL 1 — VQI CubeSat System Architecture Proposal v0.1 (May 2026)
+#
+# Source: VQI CubeSat System Architecture Proposal, Pre-PDR Draft
+# Platform: 6U CubeSat · Protocol: Decoy-State BB84 · Wavelength: 850 nm
+#
+# Annotation key
+# --------------
+#   [PROPOSAL]  Value stated directly in the proposal document.
+#   [DERIVED]   Calculated from proposal data (formula shown).
+#   [ASSUMED]   Not in proposal; engineering estimate with documented basis.
+#               Must be confirmed with the relevant subsystem team.
+#   [FIXED]     Upgrade applied (vs original proposal); see comment.
+#   [TBD]       Not in proposal and cannot be reasonably estimated;
+#               falls back to baseline default — DO NOT use for final analysis.
+#
+# Parameters NOT provided by the proposal
+# ----------------------------------------
+#   SITE (intentionally omitted — set per-run via code or site YAML):
+#     inclination    — "orbit type TBD"
+#     gs_lat / gs_lon / gs_alt_m — OGS location not selected
+#
+#   SECONDARY (smaller sensitivity; using standard values):
+#     P_mu / P_nu / P_X — pulse probability ratios; protocol design choice
+#     r_PE              — PE fraction; software design choice
+#     epsilon_PA        — security parameter; mission requirement
+
+name: proposal_1
+description: "VQI CubeSat Proposal v0.1 — 6U, 500 km, 80 mm TX, 1.5 m OGS, SNSPD (100 MHz)"
+
+overrides:
+
+  # ── Orbital geometry ──────────────────────────────────────────────────────
+  h_orbit: 500000            # [PROPOSAL] ~500 km LEO (Section 2)
+  # inclination              # [TBD] orbit type TBD — set per-run or via site YAML
+  # gs_lat / gs_lon / gs_alt_m — [TBD] OGS not selected; set per-run
+
+  # ── Ground station ────────────────────────────────────────────────────────
+  theta_el_min: 20.0         # [PROPOSAL] ">20° elevation" (Sections 2 & 5)
+  t_acq: 10.0                # [PROPOSAL] APT "target acquisition time <10 s" (Section 4.3)
+
+  # ── Receiver optics ───────────────────────────────────────────────────────
+  D_rx: 1.5                  # [FIXED] upgraded from 1.0 m to 1.5 m for AEP margin
+                             #   (1 m gives ℓ_finite=0 at 500 km even with SNSPD)
+  eta_rx: 0.40               # [ASSUMED] ground receiver optical chain efficiency:
+                             #   2 mirror reflections (×0.95 each) × spectral filter (×0.88)
+                             #   × polarisation analyser PBS+waveplates (×0.90)
+                             #   × fibre coupling to detector (×0.80) ≈ 0.40
+                             #   Basis: published OGS efficiency budgets (Bourgoin 2013,
+                             #   QUARC Bristol); consistent with eta_rx=0.45 in optimistic.
+
+  # ── Transmitter / payload ─────────────────────────────────────────────────
+  eta_tx: 0.45               # [ASSUMED] transmitter optical chain efficiency:
+                             #   VCSEL-to-waveguide mode coupling (×0.80)
+                             #   × waveguide propagation + polarisation optics (×0.90)
+                             #   × beam-expanding relay to 80 mm aperture (×0.92)
+                             #   × exit window (×0.95) ≈ 0.45 (conservatively below OSIRIS
+                             #   heritage due to CubeSat alignment uncertainty; revise once
+                             #   QUBE-I full transmission budget is available)
+  lambda_: 850.0e-9          # [PROPOSAL] 850 nm (Sections 1, 4.1, 5)
+  w0: 0.04                   # [DERIVED] maximum beam waist allowed by 80 mm aperture:
+                             #   w0 = D_tx/2 = 0.040 m. Analytic optimum w0* = λ/(π·σ·√2)
+                             #   ≈ 96 mm exceeds aperture → aperture-limited; use maximum.
+                             #   Verified by sweep: R monotonically increases with w0 to aperture.
+  mu: 0.6                    # [PROPOSAL] "signal (μ ≈ 0.6)" (Section 4.1)
+  nu: 0.1                    # [PROPOSAL] "decoy (ν ≈ 0.1)" (Section 4.1)
+  P_mu: 0.6                  # [ASSUMED] pulse probabilities not stated
+  P_nu: 0.3
+  P_X: 0.9
+  f_clock: 100.0e6           # [FIXED] restored to 100 MHz via SNSPD detector upgrade
+                             #   (Si-SPAD tau_dead=50 ns limits clock to 20 MHz, which
+                             #   cannot generate finite-key bits at 500 km)
+  e_opt: 0.035               # [DERIVED] non-dark-count QBER contributors (Section 4.1):
+                             #   encoder 1.7% + polarisation comp <1.0% + background <0.3%
+                             #   + timing jitter <0.5% = ~3.5%. Dark counts modelled separately.
+
+  # ── Pointing (ADCS + APT) ────────────────────────────────────────────────
+  theta_pnt: 0.0             # [ASSUMED] no bias term stated
+  sigma_pnt: 2.0e-6          # [PROPOSAL] lower bound of "2–5 µrad residual" (Sections 3, 4.3, 5)
+
+  # ── Atmosphere ────────────────────────────────────────────────────────────
+  alpha: 6.58e-7             # [DERIVED] τ_zenith=0.329 / 500e3; replace once OGS site confirmed
+  Cn2_0: 1.7e-14             # [ASSUMED] moderate; replace with site measurement
+  v_wind: 21.0               # [ASSUMED] HV model standard value
+
+  # ── Detector — SNSPD (upgrade from Si-SPAD) ───────────────────────────────
+  eta_det: 0.85              # [FIXED] SNSPD detection efficiency (vs 0.55 for Si-SPAD)
+  dark_count_rate: 100.0     # [FIXED] SNSPD dark count rate (vs <300 cps for Si-SPAD)
+  tau_dead: 10.0e-9          # [FIXED] SNSPD dead time → f_clock limit = 100 MHz
+                             #   NOTE: 100 MHz clock with D_rx=1.5 m requires ~24 kbps classical
+                             #   channel. UHF 9.6 kbps is INSUFFICIENT — upgrade RF to
+                             #   UHF 115 kbps or S-band before declaring architecture complete.
+
+  # ── Post-processing ───────────────────────────────────────────────────────
+  r_PE: 0.10                 # [ASSUMED] not stated
+  ec_algorithm: ldpc         # [PROPOSAL] "error correction (LDPC)" (Section 4.6)
+  epsilon_PA: 1.0e-10        # [ASSUMED] not stated
+  rf_bandwidth: 9600         # [PROPOSAL] UHF ≥9.6 kbit/s — WILL FAIL EC FEASIBILITY CHECK
+                             #   with SNSPD upgrade. Flag to COMMS team.
+  dt_sim: 1.0

@@ -1,0 +1,49 @@
+name: bourgoin_2013
+description: "Bourgoin et al. (2013) NJP 15 023006 — 600 km, 670 nm, D_rx=0.5 m; validation target"
+
+overrides:
+
+  # ── Orbital geometry ──────────────────────────────────────────────────────
+  h_orbit: 600000            # 600 km
+
+  # ── Ground station ────────────────────────────────────────────────────────
+  gs_lat: 36.1
+  gs_lon: -86.7
+  gs_alt_m: 182.0
+  theta_el_min: 10.0
+  t_acq: 15.0
+
+  # ── Receiver optics ───────────────────────────────────────────────────────
+  D_rx: 0.50                 # m
+  eta_rx: 0.45
+
+  # ── Transmitter / payload ─────────────────────────────────────────────────
+  eta_tx: 0.50
+  lambda_: 670.0e-9          # m
+  w0: 0.06                   # m
+  mu: 0.5
+  nu: 0.1
+  P_mu: 0.6
+  P_nu: 0.3
+  P_X: 0.9
+  f_clock: 300.0e6           # Hz
+  e_opt: 0.03
+
+  # ── Pointing (ADCS) ───────────────────────────────────────────────────────
+  sigma_pnt: 2.0e-6          # rad
+
+  # ── Atmosphere ────────────────────────────────────────────────────────────
+  alpha: 5.483e-7            # = 0.329 / 600e3 (1/m)
+  Cn2_0: 1.7e-14             # m^{-2/3}
+
+  # ── Detector — low-noise SPAD (matches paper) ─────────────────────────────
+  eta_det: 0.65
+  dark_count_rate: 20.0      # counts/s
+  tau_dead: 50.0e-9          # s
+
+  # ── Post-processing ───────────────────────────────────────────────────────
+  r_PE: 0.10
+  ec_algorithm: ldpc
+  epsilon_PA: 1.0e-10
+  rf_bandwidth: 10.0e6
+  dt_sim: 1.0

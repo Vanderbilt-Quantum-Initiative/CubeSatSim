@@ -57,8 +57,16 @@ class ParameterRegistry:
         pdef = PARAM_DEFS[name]
 
         if isinstance(value, str):
-            self._str_values[name] = value
-            return
+            # PyYAML parses e.g. "20.0e6" (no sign) as a string, not a float.
+            # Try numeric coercion for parameters that have numeric bounds.
+            if pdef.bounds is not None:
+                try:
+                    value = float(value)
+                except ValueError:
+                    pass
+            if isinstance(value, str):
+                self._str_values[name] = value
+                return
 
         if pdef.bounds is not None:
             lo, hi = pdef.bounds

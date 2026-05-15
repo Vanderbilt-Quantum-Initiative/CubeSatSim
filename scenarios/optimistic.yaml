@@ -1,0 +1,46 @@
+name: optimistic
+description: "Optimistic — D_rx=1.5 m, SNSPD, low-noise site, near-optimal beam waist"
+
+overrides:
+
+  # ── Orbital geometry ──────────────────────────────────────────────────────
+  h_orbit: 400000
+
+  # ── Ground station ────────────────────────────────────────────────────────
+  theta_el_min: 10.0
+  t_acq: 10.0                # s — faster acquisition assumed
+
+  # ── Receiver optics ───────────────────────────────────────────────────────
+  D_rx: 1.5                  # m — largest aperture considered
+  eta_rx: 0.55
+
+  # ── Transmitter / payload ─────────────────────────────────────────────────
+  eta_tx: 0.60
+  lambda_: 850.0e-9
+  w0: 0.10                   # m — near analytic optimum w0* ≈ 9.6 cm at sigma_pnt=1 µrad
+  mu: 0.5
+  nu: 0.1
+  P_mu: 0.6
+  P_nu: 0.3
+  P_X: 0.9
+  f_clock: 100.0e6
+  e_opt: 0.02                # tighter polarisation compensation
+
+  # ── Pointing (ADCS) ───────────────────────────────────────────────────────
+  sigma_pnt: 1.0e-6          # rad — best-case fine-pointing
+
+  # ── Atmosphere ────────────────────────────────────────────────────────────
+  alpha: 5.0e-7              # = 0.20 / 400e3 — good high-altitude site
+  Cn2_0: 1.0e-15             # m^{-2/3} — very low turbulence
+
+  # ── Detector — SNSPD ─────────────────────────────────────────────────────
+  eta_det: 0.85
+  dark_count_rate: 100.0     # counts/s
+  tau_dead: 10.0e-9          # s
+
+  # ── Post-processing ───────────────────────────────────────────────────────
+  r_PE: 0.10
+  ec_algorithm: ldpc
+  epsilon_PA: 1.0e-10
+  rf_bandwidth: 10.0e6
+  dt_sim: 1.0

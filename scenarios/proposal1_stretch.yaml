@@ -1,0 +1,67 @@
+# PROPOSAL 1 STRETCH — same as proposal1_revised but with 100 mm transmit aperture
+#
+# The single change: w0 0.04→0.05 m (D_tx 80→100 mm).
+#
+# Rationale:
+#   The 6U +Z face is 100×226 mm. A 100 mm aperture fits within this face and
+#   is the highest-impact single design change available (adds ~+2 dB to the
+#   link budget). The 80 mm aperture in proposal_1 forces w0 ≤ 40 mm, which
+#   sets the 400 km beam footprint radius to ~14 m. A 100 mm aperture allows
+#   w0 ≈ 50 mm, reducing the 400 km beam radius to ~11 m and improving
+#   diffraction-limited collection by (50/40)^4 ≈ 2.4× (∝ w0^2 in both
+#   transmit and receive overlap).
+#
+#   This scenario tests whether the aperture increase alone crosses the
+#   AEP finite-key break-even threshold.
+#
+# All other parameters identical to proposal1_revised.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: proposal1_stretch
+description: "Proposal 1 Revised + 100 mm TX aperture (w0=50 mm) — tests AEP break-even"
+
+overrides:
+
+  # ── Orbital geometry ──────────────────────────────────────────────────────
+  h_orbit: 400000
+
+  # ── Ground station ────────────────────────────────────────────────────────
+  theta_el_min: 20.0
+  t_acq: 10.0
+
+  # ── Receiver optics ───────────────────────────────────────────────────────
+  D_rx: 1.5
+  eta_rx: 0.50
+
+  # ── Transmitter / payload ─────────────────────────────────────────────────
+  eta_tx: 0.55
+  lambda_: 850.0e-9
+  w0: 0.05                   # CHANGED: 0.04→0.05 m (100 mm aperture, D_tx/2 = 50 mm)
+  mu: 0.6
+  nu: 0.1
+  P_mu: 0.6
+  P_nu: 0.3
+  P_X: 0.9
+  f_clock: 100.0e6
+  e_opt: 0.025
+
+  # ── Pointing ─────────────────────────────────────────────────────────────
+  theta_pnt: 0.0
+  sigma_pnt: 1.5e-6
+
+  # ── Atmosphere (good observatory site) ───────────────────────────────────
+  alpha: 5.0e-7
+  Cn2_0: 5.0e-15
+  v_wind: 21.0
+
+  # ── Detector — SNSPD ─────────────────────────────────────────────────────
+  eta_det: 0.85
+  dark_count_rate: 100.0
+  tau_dead: 10.0e-9
+
+  # ── Post-processing ───────────────────────────────────────────────────────
+  r_PE: 0.10
+  ec_algorithm: ldpc
+  epsilon_PA: 1.0e-10
+  rf_bandwidth: 25000
+  dt_sim: 1.0

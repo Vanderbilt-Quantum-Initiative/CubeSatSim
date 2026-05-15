@@ -1,0 +1,67 @@
+# CubeSatSim scenario file
+# Drop this file (renamed) into scenarios/ or pass its path to load_yaml().
+#
+# Only include parameters you want to override — everything else inherits
+# from the baseline defaults in params/definitions.py.
+#
+# Usage:
+#   from params.scenarios import load_yaml
+#   from params.registry import ParameterRegistry
+#
+#   reg = ParameterRegistry()
+#   reg.update(load_yaml("scenarios/my_site.yaml"))
+#
+# Parameter names must match keys in params/definitions.py exactly.
+# All values are in SI units (metres, radians, Hz, etc.) unless noted.
+
+name: template           # used by get_scenario() after load_yaml(); must be unique
+description: "Template — copy and rename this file"
+
+overrides:
+
+  # ── Orbital geometry ──────────────────────────────────────────────────────
+  h_orbit: 400000        # orbital altitude (m)
+  inclination: 51.6      # orbital inclination (deg)
+
+  # ── Ground station ────────────────────────────────────────────────────────
+  gs_lat: 36.1           # geodetic latitude (deg, N positive)
+  gs_lon: -86.7          # geodetic longitude (deg, E positive)
+  gs_alt_m: 182.0        # altitude above WGS84 (m)
+  theta_el_min: 10.0     # minimum elevation angle (deg)
+  t_acq: 15.0            # acquisition time after rising above theta_el_min (s)
+
+  # ── Receiver optics ───────────────────────────────────────────────────────
+  D_rx: 1.0              # aperture diameter (m) — single biggest lever on ℓ_finite
+  eta_rx: 0.45           # receiver optical chain efficiency
+
+  # ── Transmitter / payload ─────────────────────────────────────────────────
+  eta_tx: 0.50           # transmitter optical chain efficiency
+  lambda_: 850.0e-9      # wavelength (m)
+  w0: 0.08               # beam waist at exit aperture (m); optimum ≈ λ/(π·σ_pnt·√2)
+  mu: 0.5                # signal intensity (photons/pulse)
+  nu: 0.1                # weak-decoy intensity (photons/pulse); must be < mu
+  P_mu: 0.6              # probability of sending a signal pulse
+  P_nu: 0.3              # probability of sending a decoy pulse
+  P_X: 0.9               # probability of choosing the key-generating basis
+  f_clock: 100.0e6       # clock rate (Hz); must satisfy f_clock ≤ 1/tau_dead
+  e_opt: 0.03            # residual optical QBER after polarisation compensation
+
+  # ── Pointing (ADCS) ───────────────────────────────────────────────────────
+  theta_pnt: 0.0         # mean pointing bias (rad)
+  sigma_pnt: 2.0e-6      # pointing jitter 1-sigma (rad)
+
+  # ── Atmosphere ────────────────────────────────────────────────────────────
+  alpha: 8.225e-7        # Beer-Lambert extinction (1/m); = tau_zenith / h_orbit
+  Cn2_0: 1.7e-14         # ground-level turbulence structure parameter (m^{-2/3})
+  v_wind: 21.0           # RMS wind speed for Hufnagel-Valley model (m/s)
+
+  # ── Detector ─────────────────────────────────────────────────────────────
+  eta_det: 0.60          # single-photon detection efficiency
+  dark_count_rate: 500.0 # dark count rate (counts/s)
+  tau_dead: 50.0e-9      # dead time (s); sets pile-up limit f_clock ≤ 1/tau_dead
+
+  # ── Post-processing ───────────────────────────────────────────────────────
+  r_PE: 0.10             # fraction of sifted bits for parameter estimation
+  ec_algorithm: ldpc     # "ldpc" (one-way) or "cascade" (interactive)
+  epsilon_PA: 1.0e-10    # composable security parameter
+  rf_bandwidth: 10.0e6   # classical channel bandwidth (bits/s)
