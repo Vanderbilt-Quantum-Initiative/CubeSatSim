@@ -26,7 +26,7 @@ The binding mission success criterion is **ℓ_finite > 0** — not QBER alone.
 ## Quick start
 
 ```bash
-pip install numpy scipy matplotlib skyfield sgp4
+pip install -r requirements.txt
 ```
 
 ```python
