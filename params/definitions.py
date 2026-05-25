@@ -129,11 +129,12 @@ PARAM_DEFS: dict[str, ParamDef] = {
         owner="Payload/Ground Station (joint trade)",
         status=Status.ESTIMATED,
         description=(
-            "Pulse repetition rate.  Constrained from above by detector dead time: "
-            "f_clock ≤ 1/τ_d.  Si-SPAD: ≤ 10–50 MHz.  SNSPD: ≤ 100–200 MHz."
+            "Pulse repetition rate.  Constrained by timing jitter (f_clock ≤ 1/(3·σ_t)) "
+            "and payload SWaP.  Dead time is NOT a hard ceiling — Rogers (2007) P_{0,0} "
+            "correction applies; negligible at satellite link losses."
         ),
         default=100e6,
-        bounds=(1e6, 500e6),
+        bounds=(1e6, 2e9),
         tier=1,
     ),
     "e_opt": ParamDef(
@@ -311,7 +312,8 @@ PARAM_DEFS: dict[str, ParamDef] = {
         owner="Ground Station",
         status=Status.ESTIMATED,
         description=(
-            "Detector dead time.  Sets upper limit on f_clock: f_clock ≤ 1/τ_d. "
+            "Detector dead time.  Enters Rogers (2007) P_{0,0} sifted-bit correction; "
+            "negligible at satellite link losses (Q_mu ~ 1e-5).  "
             "Si-SPAD: 20–100 ns.  SNSPD: 5–10 ns."
         ),
         default=50e-9,

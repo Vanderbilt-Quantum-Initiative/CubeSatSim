@@ -116,11 +116,20 @@ class ParameterRegistry:
                 errors.append("nu must be strictly less than mu.")
             if self._values.get("P_mu", 0.0) + self._values.get("P_nu", 0.0) > 1.0:
                 errors.append("P_mu + P_nu must be ≤ 1 (P_vac would be negative).")
+            # Dead time is NOT a hard clock-rate ceiling (Rogers 2007).
+            # It reduces sifted-bit probability via P_{0,0}; at satellite
+            # link losses (Q_mu ~ 1e-5) that correction is negligible.
+            # Warn only when occupancy rho_rx*tau_d > 0.01 (non-negligible regime).
             fc = self._values.get("f_clock", 0.0)
             td = self._values.get("tau_dead", 1.0)
-            if fc > 1.0 / td:
+            Q_mu_est = self._values.get("eta_det", 0.6) * 1e-4  # conservative estimate
+            rho_rx = 4.0 * fc * Q_mu_est
+            if rho_rx * td > 0.01:
                 errors.append(
-                    f"f_clock={fc:.2e} Hz exceeds dead-time limit 1/τ_d={1/td:.2e} Hz."
+                    f"Dead-time occupancy rho_rx*tau_d={rho_rx*td:.3f} > 0.01 "
+                    f"(f_clock={fc:.2e} Hz, tau_d={td*1e9:.1f} ns): "
+                    f"Rogers P_{{0,0}} correction is non-negligible — "
+                    f"verify dead-time regime with dead_time_regime() after simulation."
                 )
         except Exception:
             pass

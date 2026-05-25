@@ -42,9 +42,10 @@ class DetectorModel:
                   Si-SPAD: 0.20–0.65; SNSPD: 0.80–0.95.
         p_d:      Dark count probability per gate (dimensionless).
                   Typical Si-SPAD at −20 °C: ~1e-6 per gate.
-        tau_d:    Dead time (s). Sets pile-up threshold: f_clock must stay
-                  below 1/tau_d to avoid count-rate saturation.
-                  Typical Si-SPAD: 20–100 ns = 20e-9 to 100e-9 s.
+        tau_d:    Dead time (s). Enters the Rogers P_{0,0} correction to the
+                  sifted bit rate. At satellite link losses (Q_mu ~ 1e-5),
+                  the correction is negligible; the binding clock-rate
+                  constraint is timing jitter. Typical Si-SPAD: 20–100 ns.
         delta_t:  Gate width (s). Set by timing synchronisation precision
                   sigma_sync; not a free parameter. Enters the background
                   photon rate: p_bg ∝ H_bg * Omega_FOV * A_rx * delta_lambda
@@ -125,43 +126,71 @@ class DetectorModel:
         """
         return self.eta_det
 
-    def max_clock_rate(self) -> float:
+    def rogers_p00(self, p_total: float, f_clock: float) -> float:
         """
-        Maximum sustainable pulse rate before dead-time saturation (Hz).
+        Rogers (2007) steady-state probability that both detectors in a basis
+        are simultaneously active — the fraction of detections that produce a
+        valid, uncompromised sifted bit.
 
-            f_max = 1 / tau_d
+            k = tau_d * f_clock          (dead-time periods per clock cycle)
+            P_{0,0} = [1 + 2k*(2p/(1-2p)) + (k²-k)*(2p/(1-2p))²]⁻¹
 
-        Driving f_clock above this limit causes pile-up: detections from one
-        pulse prevent detection of the next, distorting Q_mu and E_mu. This
-        bound must be checked against SourceConfig.f_clock before each pass.
+        where p = p_total is the per-detector sifted-bit probability per clock
+        cycle (signal + dark, pre-divided by 8 for basis/state factors).
 
-        Returns:
-            Maximum clock rate in Hz.
-        """
-        return 1.0 / self.tau_d
-
-    def validate_clock_rate(self, f_clock: float) -> tuple[bool, str]:
-        """
-        Check whether f_clock is within the detector's dead-time limit.
+        At satellite link losses (p ~ 1e-6), P_{0,0} ≈ 1 regardless of k.
+        Dead time has negligible effect on sifted bit rate in this regime;
+        the binding clock-rate constraint is timing jitter, not dead time.
 
         Args:
-            f_clock: Requested pulse repetition rate (Hz).
+            p_total: Per-detector sifted-bit probability per clock cycle.
+            f_clock: Clock rate (Hz).
 
         Returns:
-            (True, "ok") if f_clock ≤ 1/tau_d.
-            (False, message) describing the violation and headroom if not.
+            P_{0,0} ∈ (0, 1].
         """
-        f_max = self.max_clock_rate()
-        if f_clock <= f_max:
-            return True, "ok"
-        ratio = f_clock / f_max
-        return (
-            False,
-            f"f_clock {f_clock / 1e6:.1f} MHz exceeds detector limit "
-            f"{f_max / 1e6:.1f} MHz (tau_d={self.tau_d * 1e9:.1f} ns). "
-            f"Clock is {ratio:.2f}× the dead-time bound; pile-up will "
-            f"distort Q_mu and E_mu. Reduce f_clock or use a faster detector.",
-        )
+        k = self.tau_d * f_clock
+        if k == 0.0 or p_total == 0.0:
+            return 1.0
+        two_p = 2.0 * p_total
+        if two_p >= 1.0:
+            return 0.0
+        ratio = two_p / (1.0 - two_p)
+        denom = 1.0 + 2.0 * k * ratio + (k * k - k) * ratio * ratio
+        return 1.0 / denom
+
+    def dead_time_regime(self, f_clock: float, Q_mu: float) -> dict:
+        """
+        Classify the dead-time operating regime for diagnostics.
+
+        Computes rho_rx * tau_d — the fractional detector occupancy. Values
+        above 0.01 indicate meaningful dead-time suppression; below 0.01 the
+        effect is negligible (P_{0,0} ≈ 1).
+
+        The binding clock-rate constraint at satellite losses is timing jitter:
+            f_clock_max_jitter ≈ 1 / (3 * sigma_t)
+        Dead time only becomes binding when link loss is very low (< ~20 dB).
+
+        Args:
+            f_clock: Clock rate (Hz).
+            Q_mu:    Signal gain (detection probability per pulse).
+
+        Returns:
+            Dict with keys: k, rho_rx, occupancy, negligible (bool), warning (str|None).
+        """
+        k = self.tau_d * f_clock
+        rho_rx = 4.0 * f_clock * Q_mu   # total detection rate across 4 detectors
+        occupancy = rho_rx * self.tau_d
+        negligible = occupancy < 0.01
+        warning = None
+        if not negligible:
+            warning = (
+                f"Dead-time occupancy {occupancy:.3f} > 0.01 — "
+                f"Rogers P_{{0,0}} correction is non-negligible. "
+                f"k={k:.2f}, rho_rx={rho_rx:.1f} cps."
+            )
+        return dict(k=k, rho_rx=rho_rx, occupancy=occupancy,
+                    negligible=negligible, warning=warning)
 
     def validate(self) -> tuple[bool, str]:
         """
